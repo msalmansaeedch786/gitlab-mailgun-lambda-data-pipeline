@@ -1,0 +1,57 @@
+before_script:
+  - echo "This is a new before_script of all jobs"
+  - apt-get update
+  - apt-get install -y zip
+  - apt-get install -y awscli
+
+image: "python:latest"
+
+variables:
+  RECEEVE_LAMBDA_NAME: 'receeve_challenge_lambda'
+  RECEEVE_LAMBDA_KEY: lambda_function_payload.zip
+
+stages:
+    - lint
+    - lambda_build
+    - lambda_deploy
+
+lint:
+  stage: lint
+  before_script:
+    - pip install pylint
+  script:
+    # Remvoe the || true at the end to stop ignoring pylint's results.
+    # As modules have not been used, we need to give all levels of code
+    # depth.
+    - pylint -rn src/*.py || true
+  only:
+    refs:
+      - master
+
+lambda_build:
+  stage: lambda_build
+  dependencies:
+    - lint
+  only:
+    refs:
+      - master
+  script:
+    - mkdir lambda-codes-deploy && cd lambda-codes-deploy  
+    - cp ../src/aws_s3.py .
+    - cp ../src/aws_sns.py .
+    - cp ../src/aws_ssm.py .
+    - cp ../src/lambda_handler.py .
+    - zip -r ../$RECEEVE_LAMBDA_KEY .
+  artifacts:
+    paths:
+      - $RECEEVE_LAMBDA_KEY
+
+lambda_deploy:
+  stage: lambda_deploy
+  dependencies:
+    - lambda_build
+  only:
+    refs:
+      - master
+  script:
+    - aws lambda update-function-code --function-name "${RECEEVE_LAMBDA_NAME}" --zip-file fileb://$RECEEVE_LAMBDA_KEY
